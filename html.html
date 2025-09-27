@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Página protegida con Token</title>
+<style>
+  body{font-family:Inter,system-ui,Arial;background:#0d1117;color:#f0f6fc;padding:20px;}
+  .card{max-width:980px;margin:0 auto;background:#161b22;padding:20px;border-radius:10px;
+        box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+  input,textarea,select{width:100%;padding:8px;border-radius:6px;border:1px solid #30363d;
+        background:#0d1117;color:#f0f6fc}
+  button{background:#238636;color:#fff;padding:8px 12px;border:none;border-radius:8px;
+         cursor:pointer;margin-right:8px;margin-top:8px}
+  button.secondary{background:#30363d;color:#f0f6fc}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+  th,td{padding:8px;border:1px solid #30363d;text-align:left}
+  th{background:#21262d}
+  .muted{color:#8b949e;font-size:13px}
+  .mono{font-family:ui-monospace,monospace}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h2>🔒 Acceso con Token</h2>
+    <div id="loginSection">
+      <p>Introduce tu token válido para acceder:</p>
+      <input id="tokenInput" placeholder="Pega aquí tu token">
+      <button id="validateBtn">Validar</button>
+      <p id="statusMsg"></p>
+    </div>
+
+    <div id="appSection" class="hidden">
+      <h2>✅ Generador seguro — desde BINs (solo FICTICIOS)</h2>
+      <p class="muted">Confirma que usas <strong>solo BINs ficticios</strong>. Este generador no debe usarse con datos reales.</p>
+
+      <label class="small">Pega aquí una lista de BINs (uno por línea):</label>
+      <textarea id="binsArea" placeholder="Ejemplo:
+999901
+999902
+123400"></textarea>
+
+      <div style="margin-top:8px" class="row">
+        <label>Cantidad por BIN
+          <input id="perBin" type="number" min="1" max="1000" value="5"/>
+        </label>
+        <label>Longitud de tarjeta
+          <select id="cardLen"><option value="16" selected>16</option><option value="15">15</option></select>
+        </label>
+        <label><input type="checkbox" id="useLuhn" checked/> Calcular dígito Luhn</label>
+      </div>
+
+      <div style="margin-top:8px" class="row">
+        <label><input type="checkbox" id="force2025" checked/> Forzar expiración en 2025</label>
+        <label><input type="checkbox" id="varyYear" /> Permitir variar año (2023–2026)</label>
+      </div>
+
+      <p style="margin-top:10px;">
+        <label><input type="checkbox" id="confirmFict" /> Confirmo que los BINs son ficticios</label>
+      </p>
+
+      <div style="margin-top:8px">
+        <button id="generateBtn">Generar</button>
+        <button id="copyBtn" class="secondary">Copiar</button>
+        <button id="csvBtn" class="secondary">Descargar CSV</button>
+        <button id="clearBtn" class="secondary">Limpiar</button>
+      </div>
+
+      <div id="notice" class="muted" style="margin-top:10px"></div>
+
+      <div style="overflow:auto;margin-top:12px">
+        <table id="resultsTable" style="display:none">
+          <thead><tr><th>#</th><th>BIN</th><th>CardNumber</th><th>Second (3-4d)</th><th>CVV</th><th>Expiry</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ===== LOGIN CON TOKEN =====
+  function loadTokens(){
+    return JSON.parse(localStorage.getItem("validTokens")||"[]");
+  }
+
+  validateBtn.addEventListener('click',()=>{
+    const entered=tokenInput.value.trim();
+    const tokens=loadTokens();
+    if(tokens.includes(entered)){
+      statusMsg.textContent="✔ Token válido. Acceso concedido.";
+      loginSection.classList.add("hidden");
+      appSection.classList.remove("hidden");
+    } else {
+      statusMsg.textContent="❌ Token inválido.";
+    }
+  });
+
+  // ===== GENERADOR DE BINs (solo ficticios) =====
+  function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+  function pad(n,l){return String(n).padStart(l,'0');}
+
+  function luhnValidate(numStr){
+    const digits = numStr.split('').reverse().map(d=>parseInt(d,10));
+    let sum=0;
+    for(let i=0;i<digits.length;i++){
+      let v=digits[i];
+      if(i%2===1){v*=2;if(v>9)v-=9;}
+      sum+=v;
+    }
+    return sum%10===0;
+  }
+  function luhnCheckDigit(partial){
+    for(let d=0;d<=9;d++){if(luhnValidate(partial+d)) return String(d);}
+    return '0';
+  }
+
+  function generateAccountDigits(len){
+    let s='';for(let i=0;i<len;i++) s+=randInt(0,9);return s;
+  }
+  function generateCVV(){let len=Math.random()<0.5?3:4,s='';for(let i=0;i<len;i++)s+=randInt(0,9);return s;}
+  function generateSecondNumber(){let len=Math.random()<0.5?3:4;return String(randInt(10**(len-1),10**len-1));}
+  function generateExpiry(force2025,varyYear){
+    if(force2025){return pad(randInt(1,12),2)+"/25";}
+    if(varyYear){let y=randInt(2023,2026);return pad(randInt(1,12),2)+"/"+String(y).slice(2);}
+    return pad(randInt(1,12),2)+"/25";
+  }
+
+  generateBtn.addEventListener('click',()=>{
+    notice.textContent='';
+    const bins=binsArea.value.trim().split(/\s+/).map(b=>b.replace(/\D/g,'')).filter(b=>b);
+    if(bins.length===0){notice.textContent="Pon al menos un BIN ficticio.";return;}
+    if(!confirmFict.checked){notice.textContent="Debes confirmar que los BINs son ficticios.";return;}
+    const per=Math.max(1,Math.min(1000,parseInt(perBin.value||'5')));
+    const targetLen=parseInt(cardLen.value,10);
+    tbody.innerHTML='';
+    let rowIndex=0;
+
+    for(const bin of bins){
+      if(bin.length<1||bin.length>=targetLen) continue;
+      for(let i=0;i<per;i++){
+        rowIndex++;
+        const accLen=targetLen-bin.length-1;
+        const account=generateAccountDigits(accLen);
+        let withoutCheck=bin+account;
+        const check=useLuhn.checked?luhnCheckDigit(withoutCheck):randInt(0,9);
+        const fullNumber=withoutCheck+check;
+        const formatted=fullNumber.match(/.{1,4}/g).join(' ');
+        const cvv=generateCVV();
+        const second=generateSecondNumber();
+        const expiry=generateExpiry(force2025.checked,varyYear.checked);
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${rowIndex}</td>
+                      <td class="mono">${bin}</td>
+                      <td class="mono">${formatted}</td>
+                      <td class="mono">${second}</td>
+                      <td class="mono">${cvv}</td>
+                      <td>${expiry}</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+    resultsTable.style.display=tbody.children.length>0?"table":"none";
+    if(tbody.children.length===0) notice.textContent="No se generaron filas.";
+  });
+
+  copyBtn.addEventListener('click',async()=>{
+    if(tbody.children.length===0){alert("Nada para copiar");return;}
+    let text="index\tBIN\tCardNumber\tSecond\tCVV\tExpiry\n";
+    Array.from(tbody.rows).forEach(r=>{
+      text+=Array.from(r.cells).map(c=>c.innerText.trim()).join("\t")+"\n";
+    });
+    await navigator.clipboard.writeText(text);
+    alert("Copiado al portapapeles.");
+  });
+
+  csvBtn.addEventListener('click',()=>{
+    if(tbody.children.length===0){alert("Nada para descargar");return;}
+    let csv="index,BIN,CardNumber,Second,CVV,Expiry\n";
+    Array.from(tbody.rows).forEach(r=>{
+      csv+=Array.from(r.cells).map(c=>'"'+c.innerText.replace(/"/g,'""')+'"').join(",")+"\n";
+    });
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download="generados_bins_ficticios.csv";a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  clearBtn.addEventListener('click',()=>{
+    tbody.innerHTML='';resultsTable.style.display="none";notice.textContent='';
+  });
+</script>
+</body>
+</html>
